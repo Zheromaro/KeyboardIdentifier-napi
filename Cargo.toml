@@ -1,0 +1,23 @@
+[package]
+edition = "2024"
+name = "keyboard_identifier_napi"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tokio = { version = "1.0", features = ["macros", "rt", "sync", "rt-multi-thread"] }
+keyboard_identifier = { path = "../keyboard_identifier" }
+napi-derive = "3.0.0"
+
+[dependencies.napi]
+version = "3.0.0"
+features = ["napi9", "async", "tokio_rt"]
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+strip = "symbols"
