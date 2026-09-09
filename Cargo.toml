@@ -17,7 +17,3 @@ features = ["napi9", "async", "tokio_rt"]
 
 [build-dependencies]
 napi-build = "2"
-
-[profile.release]
-lto = true
-strip = "symbols"

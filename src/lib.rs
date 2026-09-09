@@ -1,9 +1,8 @@
 #![deny(clippy::all)]
-use keyboard_identifier::{keyboard_source::*, *};
+use keyboard_identifier::{KeyboardManager as InnerManager, keyboard_source::*};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use napi_derive::napi;
-use std::sync::Arc;
 
 #[napi(object)]
 pub struct JsPortId {
@@ -41,6 +40,11 @@ impl From<&Keyboard> for JsKeyboard {
 }
 
 #[napi]
+pub struct KeyboardManager {
+  inner: InnerManager,
+}
+
+#[napi]
 impl KeyboardManager {
   #[napi]
   pub fn on_plugged(
@@ -52,8 +56,8 @@ impl KeyboardManager {
       .callee_handled::<false>()
       .build()?;
 
-    self.listener.on_plugged(move |kb| {
-      tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
+    self.inner.on_plugged(move |kb| {
+      let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
     });
 
     Ok(())
@@ -69,8 +73,8 @@ impl KeyboardManager {
       .callee_handled::<false>()
       .build()?;
 
-    self.listener.on_unplugged(move |kb| {
-      tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
+    self.inner.on_unplugged(move |kb| {
+      let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
     });
 
     Ok(())
@@ -86,8 +90,8 @@ impl KeyboardManager {
       .callee_handled::<false>()
       .build()?;
 
-    self.listener.on_pressed(move |kb| {
-      tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
+    self.inner.on_pressed(move |kb| {
+      let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
     });
 
     Ok(())
@@ -96,7 +100,7 @@ impl KeyboardManager {
   #[napi]
   pub fn get_keyboards(&self) -> Vec<JsKeyboard> {
     self
-      .source
+      .inner
       .get_keyboards()
       .iter()
       .map(JsKeyboard::from)
@@ -106,15 +110,11 @@ impl KeyboardManager {
 
 #[napi]
 pub async fn new_keyboard_source() -> Result<KeyboardManager> {
-  let source = Arc::new(
-    OSKeyboardSource::new()
-      .await
-      .map_err(|err| Error::from_reason(err.to_string()))?,
-  );
+  let mut inner = InnerManager::new()
+    .await
+    .map_err(|err| Error::from_reason(err.to_string()))?;
 
-  let listener = Arc::new(KeyboardListener::new());
+  inner.listen().await;
 
-  listener.listen(source.clone()).await;
-
-  Ok(KeyboardManager { listener, source })
+  Ok(KeyboardManager { inner })
 }
