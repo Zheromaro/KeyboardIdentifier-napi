@@ -1,87 +1,99 @@
-# `@napi-rs/package-template`
+# keyboard-identifier
 
-![https://github.com/napi-rs/package-template/actions](https://github.com/napi-rs/package-template/workflows/CI/badge.svg)
+High-performance Node.js native bindings for the [`keyboard_identifier`](https://crates.io/crates/keyboard_identifier) Rust crate, built with `napi.rs`. Track keyboard device connections and keypress events in real time.
 
-> Template project for writing node packages with napi-rs.
+## Features
 
-# Usage
+* **Event Listeners:** Monitor hardware plug, unplug, and keypress events.
+* **Device Identification:** Extract Vendor IDs, Product IDs, Serials, and system port paths.
+* **Non-Blocking Execution:** Asynchronous event loop integration powered by Rust threads.
 
-1. Click **Use this template**.
-2. **Clone** your project.
-3. Run `yarn install` to install dependencies.
-4. Run `yarn napi rename -n [@your-scope/package-name] -b [binary-name]` command under the project folder to rename your package.
-
-## Install this test package
+## Installation
 
 ```bash
-yarn add @napi-rs/package-template
+npm install keyboard-identifier
 ```
 
-## Ability
+## Quick Start
 
-### Build
+```javascript
+const { newKeyboardSource } = require("keyboard-identifier");
 
-After `yarn build/npm run build` command, you can see `package-template.[darwin|win32|linux].node` file in project root. This is the native addon built from [lib.rs](./src/lib.rs).
+async function main() {
+  // Initialize and start listening for hardware events
+  const manager = await newKeyboardSource();
 
-### Test
+  // Get currently connected devices
+  const keyboards = manager.getKeyboards();
+  console.log("Connected Keyboards:", keyboards);
 
-With [ava](https://github.com/avajs/ava), run `yarn test/npm run test` to testing native addon. You can also switch to another testing framework if you want.
+  // Listen for device connections
+  manager.onPlugged((kb) => {
+    console.log("Keyboard plugged:", kb);
+  });
 
-### CI
+  // Listen for device disconnections
+  manager.onUnplugged((kb) => {
+    console.log("Keyboard unplugged:", kb);
+  });
 
-With GitHub Actions, each commit and pull request will be built and tested automatically in [`node@20`, `@node22`] x [`macOS`, `Linux`, `Windows`] matrix. You will never be afraid of the native addon broken in these platforms.
+  // Listen for keypress events
+  manager.onPressed((kb) => {
+    console.log("Key pressed on device:", kb.keyboardId.name);
+  });
+}
 
-### Release
-
-Release native package is very difficult in old days. Native packages may ask developers who use it to install `build toolchain` like `gcc/llvm`, `node-gyp` or something more.
-
-With `GitHub actions`, we can easily prebuild a `binary` for major platforms. And with `N-API`, we should never be afraid of **ABI Compatible**.
-
-The other problem is how to deliver prebuild `binary` to users. Downloading it in `postinstall` script is a common way that most packages do it right now. The problem with this solution is it introduced many other packages to download binary that has not been used by `runtime codes`. The other problem is some users may not easily download the binary from `GitHub/CDN` if they are behind a private network (But in most cases, they have a private NPM mirror).
-
-In this package, we choose a better way to solve this problem. We release different `npm packages` for different platforms. And add it to `optionalDependencies` before releasing the `Major` package to npm.
-
-`NPM` will choose which native package should download from `registry` automatically. You can see [npm](./npm) dir for details. And you can also run `yarn add @napi-rs/package-template` to see how it works.
-
-## Develop requirements
-
-- Install the latest `Rust`
-- Install `Node.js@10+` which fully supported `Node-API`
-- Install `yarn@1.x`
-
-## Test in local
-
-- yarn
-- yarn build
-- yarn test
-
-And you will see:
-
-```bash
-$ ava --verbose
-
-  ✔ sync function from native code
-  ✔ sleep function from native code (201ms)
-  ─
-
-  2 tests passed
-✨  Done in 1.12s.
+main().catch(console.error);
 ```
 
-## Release package
+## API Reference
 
-Ensure you have set your **NPM_TOKEN** in the `GitHub` project setting.
+### `newKeyboardSource(): Promise<KeyboardManager>`
+Initializes the inner event listener and returns an active `KeyboardManager` instance.
 
-In `Settings -> Secrets`, add **NPM_TOKEN** into it.
+---
 
-When you want to release the package:
+### `KeyboardManager`
 
-```bash
-npm version [<newversion> | major | minor | patch | premajor | preminor | prepatch | prerelease [--preid=<prerelease-id>] | from-git]
+* **`getKeyboards(): JsKeyboard[]`**  
+  Returns a snapshot array of all currently attached keyboard devices.
 
-git push
-```
+* **`onPlugged(callback: (kb: JsKeyboard) => void): void`**  
+  Triggers the provided callback whenever a keyboard is plugged in.
 
-GitHub actions will do the rest job for you.
+* **`onUnplugged(callback: (kb: JsKeyboard) => void): void`**  
+  Triggers the provided callback whenever a keyboard is disconnected.
 
-> WARN: Don't run `npm publish` manually.
+* **`onPressed(callback: (kb: JsKeyboard) => void): void`**  
+  Triggers the provided callback whenever a keypress occurs on any connected keyboard.
+
+---
+
+### Data Structures
+
+#### `JsKeyboard`
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `keyboardId` | `JsKeyboardId` | Metadata identifying the specific hardware. |
+| `portId` | `JsPortId` | Physical port connection path details. |
+
+#### `JsKeyboardId`
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `string \| null` | Human-readable name of the device. |
+| `vendorId` | `string \| null` | Hardware USB Vendor ID. |
+| `productId` | `string \| null` | Hardware USB Product ID. |
+| `serial` | `string \| null` | Serial number string, if reported. |
+
+#### `JsPortId`
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `physicalPath` | `string \| null` | OS-specific physical port string. |
+
+## Platform Requirements
+
+This package relies on OS-level hardware access APIs provided by the underlying Rust crate. On Linux systems, users may need elevated privileges (or proper `udev` permissions) to capture raw keypresses and device events.
+
+## License
+
+MIT
