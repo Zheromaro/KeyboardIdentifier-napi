@@ -1,5 +1,5 @@
 #![deny(clippy::all)]
-use keyboard_identifier::{KeyboardManager as InnerManager, keyboard_source::*};
+use keyboard_identifier::{KeyboardManager as InnerManager, keyboard_source::Keyboard};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use napi_derive::napi;
@@ -41,11 +41,24 @@ impl From<&Keyboard> for JsKeyboard {
 
 #[napi]
 pub struct KeyboardManager {
-  inner: InnerManager,
+  // Wrap in Option so we can take ownership of it and drop it later
+  inner: Option<InnerManager>,
 }
 
 #[napi]
 impl KeyboardManager {
+  fn inner(&self) -> Result<&InnerManager> {
+    self
+      .inner
+      .as_ref()
+      .ok_or_else(|| Error::from_reason("KeyboardManager is closed"))
+  }
+
+  #[napi]
+  pub fn close(&mut self) {
+    let _ = self.inner.take();
+  }
+
   #[napi]
   pub fn on_plugged(
     &self,
@@ -55,11 +68,9 @@ impl KeyboardManager {
       .build_threadsafe_function()
       .callee_handled::<false>()
       .build()?;
-
-    self.inner.on_plugged(move |kb| {
+    self.inner()?.on_plugged(move |kb| {
       let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
     });
-
     Ok(())
   }
 
@@ -72,11 +83,9 @@ impl KeyboardManager {
       .build_threadsafe_function()
       .callee_handled::<false>()
       .build()?;
-
-    self.inner.on_unplugged(move |kb| {
+    self.inner()?.on_unplugged(move |kb| {
       let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
     });
-
     Ok(())
   }
 
@@ -89,22 +98,22 @@ impl KeyboardManager {
       .build_threadsafe_function()
       .callee_handled::<false>()
       .build()?;
-
-    self.inner.on_pressed(move |kb| {
+    self.inner()?.on_pressed(move |kb| {
       let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
     });
-
     Ok(())
   }
 
   #[napi]
-  pub fn get_keyboards(&self) -> Vec<JsKeyboard> {
-    self
-      .inner
-      .get_keyboards()
-      .iter()
-      .map(JsKeyboard::from)
-      .collect()
+  pub fn get_keyboards(&self) -> Result<Vec<JsKeyboard>> {
+    Ok(
+      self
+        .inner()?
+        .get_keyboards()
+        .iter()
+        .map(JsKeyboard::from)
+        .collect(),
+    )
   }
 }
 
@@ -113,8 +122,6 @@ pub async fn new_keyboard_source() -> Result<KeyboardManager> {
   let mut inner = InnerManager::new()
     .await
     .map_err(|err| Error::from_reason(err.to_string()))?;
-
   inner.listen().await;
-
-  Ok(KeyboardManager { inner })
+  Ok(KeyboardManager { inner: Some(inner) })
 }

@@ -26,10 +26,13 @@ async function main() {
 
   // Keep the process alive until Ctrl+C.
   await new Promise((resolve) => {
-    process.once("SIGINT", resolve);
+    process.once("SIGINT", () => {
+      console.log("\nExiting...");
+      manager.close();
+      resolve();
+    });
   });
 
-  console.log("\nExiting...");
   process.exit(0);
 }
 

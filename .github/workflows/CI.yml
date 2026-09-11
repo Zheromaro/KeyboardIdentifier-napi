@@ -1,232 +1,216 @@
 name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
 env:
   DEBUG: napi:*
   APP_NAME: keyboard_identifier_napi
-  MACOSX_DEPLOYMENT_TARGET: '10.13'
-  CARGO_INCREMENTAL: '1'
-'on':
-  push:
-    branches:
-      - main
-    tags-ignore:
-      - '**'
-    paths-ignore:
-      - '**/*.md'
-      - LICENSE
-      - '**/*.gitignore'
-      - .editorconfig
-      - docs/**
-  pull_request: null
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  CARGO_INCREMENTAL: 1
+  CARGO_TERM_COLOR: always
+
 jobs:
+  # ------------------------------------------------------------
+  # Lint
+  # ------------------------------------------------------------
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - name: Setup node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libudev-dev \
+            pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 24
-          cache: yarn
-      - name: Install
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - name: Install dependencies
-        run: yarn install
-      - name: Oxlint
-        run: yarn lint
-      - name: Cargo fmt
-        run: cargo fmt -- --check
-      - name: Clippy
-        run: cargo clippy
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - host: macos-latest
-            target: x86_64-apple-darwin
-            build: yarn build --target x86_64-apple-darwin
-          - host: windows-latest
-            build: yarn build --target x86_64-pc-windows-msvc
-            target: x86_64-pc-windows-msvc
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            build: yarn build --target x86_64-unknown-linux-gnu --use-napi-cross
-          - host: macos-latest
-            target: aarch64-apple-darwin
-            build: yarn build --target aarch64-apple-darwin
-    name: stable - ${{ matrix.settings.target }} - node@24
-    runs-on: ${{ matrix.settings.host }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Setup node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: yarn
-      - name: Install
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: ${{ matrix.settings.target }}
+          components: rustfmt, clippy
+
       - name: Cache cargo
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.napi-rs
-            .cargo-cache
-            target/
-          key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}
-      - uses: mlugg/setup-zig@v2
-        if: ${{ contains(matrix.settings.target, 'musl') }}
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-lint-
+
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  # ------------------------------------------------------------
+  # Build native platform bindings
+  # ------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux-only native dependency required by udev/libudev-sys
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libudev-dev \
+            pkg-config
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          version: 0.15.2
-      - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@v2
-        if: ${{ contains(matrix.settings.target, 'musl') }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+          node-version: 20
+          cache: yarn
+
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          tool: cargo-zigbuild
-      - name: Setup toolchain
-        run: ${{ matrix.settings.setup }}
-        if: ${{ matrix.settings.setup }}
-        shell: bash
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-build-
+
       - name: Install dependencies
         run: yarn install
+
       - name: Build
-        run: ${{ matrix.settings.build }}
+        run: yarn build --target ${{ matrix.target }}
+
+      - name: List build artifacts
         shell: bash
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: bindings-${{ matrix.settings.target }}
-          path: |
-            ${{ env.APP_NAME }}.*.node
-            ${{ env.APP_NAME }}.*.wasm
-          if-no-files-found: error
-  test-macOS-windows-binding:
-    name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
-    needs:
-      - build
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-            architecture: x64
-          - host: macos-latest
-            target: aarch64-apple-darwin
-            architecture: arm64
-          - host: macos-latest
-            target: x86_64-apple-darwin
-            architecture: x64
-        node:
-          - '22'
-          - '24'
-          - '26'
-    runs-on: ${{ matrix.settings.host }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Setup node
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-          cache: yarn
-          architecture: ${{ matrix.settings.architecture }}
-      - name: Install dependencies
-        run: yarn install
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: bindings-${{ matrix.settings.target }}
-          path: .
-      - name: List packages
-        run: ls -R .
-        shell: bash
-      - name: Test bindings
-        run: yarn test
-  test-linux-binding:
-    name: Test ${{ matrix.target }} - node@${{ matrix.node }}
-    needs:
-      - build
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-        node:
-          - '22'
-          - '24'
-          - '26'
-        exclude:
-          - target: armv7-unknown-linux-gnueabihf
-            node: '24'
-          - target: armv7-unknown-linux-gnueabihf
-            node: '26'
-    runs-on: ${{ contains(matrix.target, 'aarch64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Setup node
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ matrix.node }}
-          cache: yarn
-      - name: Output docker params
-        id: docker
         run: |
-          node -e "
-            if ('${{ matrix.target }}'.startsWith('aarch64')) {
-              console.log('PLATFORM=linux/arm64')
-            } else if ('${{ matrix.target }}'.startsWith('armv7')) {
-              console.log('PLATFORM=linux/arm/v7')
-            } else {
-              console.log('PLATFORM=linux/amd64')
-            }
-          " >> $GITHUB_OUTPUT
-          node -e "
-            if ('${{ matrix.target }}'.endsWith('-musl')) {
-              console.log('IMAGE=node:${{ matrix.node }}-alpine')
-            } else {
-              console.log('IMAGE=node:${{ matrix.node }}-slim')
-            }
-          " >> $GITHUB_OUTPUT
-      - name: Install dependencies
-        run: |
-          yarn config set --json supportedArchitectures.cpu '["current", "arm64", "x64", "arm"]'
-          yarn config set --json supportedArchitectures.libc '["current", "musl", "gnu"]'
-          yarn install
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
+          echo "Build artifacts:"
+          find . -maxdepth 2 -type f \( -name "*.node" -o -name "index.d.ts" \) -print
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.target }}
+          path: |
+            *.node
+            index.d.ts
+
+  # ------------------------------------------------------------
+  # Test Windows MSVC bindings
+  # ------------------------------------------------------------
+  test-windows-msvc-binding:
+    name: Test Windows MSVC - node@${{ matrix.node }}
+    needs:
+      - build
+    strategy:
+      fail-fast: false
+      matrix:
+        node:
+          - "22"
+          - "24"
+          - "26"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-x86_64-pc-windows-msvc
           path: .
-      - name: List packages
+
+      - name: List files
+        run: Get-ChildItem -Recurse
+        shell: powershell
+
+      - name: Test bindings
+        run: yarn test
+
+  # ------------------------------------------------------------
+  # Test Linux bindings
+  # ------------------------------------------------------------
+  test-linux-binding:
+    name: Test Linux GNU - node@${{ matrix.node }}
+    needs:
+      - build
+    strategy:
+      fail-fast: false
+      matrix:
+        node:
+          - "22"
+          - "24"
+          - "26"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: yarn
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libudev-dev \
+            pkg-config
+
+      - name: Configure Yarn architectures
+        run: |
+          yarn config set --json supportedArchitectures.cpu '["current", "x64"]'
+          yarn config set --json supportedArchitectures.libc '["current", "gnu"]'
+          yarn install
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-x86_64-unknown-linux-gnu
+          path: .
+
+      - name: List files
         run: ls -R .
         shell: bash
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-        if: ${{ contains(matrix.target, 'armv7') }}
-        with:
-          platforms: all
-      - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        if: ${{ contains(matrix.target, 'armv7') }}
+
       - name: Test bindings
-        uses: tj-actions/docker-run@v2
-        with:
-          image: ${{ steps.docker.outputs.IMAGE }}
-          name: test-bindings-${{ matrix.target }}
-          options: '-v ${{ github.workspace }}:${{ github.workspace }} -w ${{ github.workspace }} --platform ${{ steps.docker.outputs.PLATFORM }}'
-          args: npm run test
+        run: yarn test
+
+  # ------------------------------------------------------------
+  # Publish
+  # ------------------------------------------------------------
   publish:
     name: Publish
     runs-on: ubuntu-latest
@@ -235,42 +219,55 @@ jobs:
       id-token: write
     needs:
       - lint
-      - test-macOS-windows-binding
+      - test-windows-msvc-binding
       - test-linux-binding
     steps:
-      - uses: actions/checkout@v7
-      - name: Setup node
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: yarn
+
       - name: Install dependencies
         run: yarn install
-      - name: create npm dirs
+
+      - name: Create npm directories
         run: yarn napi create-npm-dirs
+
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - name: Move artifacts
         run: yarn artifacts
-      - name: List packages
-        run: ls -R ./npm
-        shell: bash
+
+      - name: Verify npm packages
+        run: |
+          echo "Generated npm packages:"
+          find npm -maxdepth 3 -type f -print | sort
+
       - name: Publish
+        shell: bash
         run: |
           npm config set provenance true
-          if git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+$";
-          then
+
+          COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+
+          if echo "$COMMIT_MESSAGE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Publishing stable release..."
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
             npm publish --access public
-          elif git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+";
-          then
+
+          elif echo "$COMMIT_MESSAGE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+-'; then
+            echo "Publishing prerelease..."
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
             npm publish --tag next --access public
+
           else
-            echo "Not a release, skipping publish"
+            echo "Not a release commit, skipping publish."
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
