@@ -4,7 +4,7 @@ export declare class KeyboardManager {
   close(): void
   onPlugged(callback: (kb: JsKeyboard) => void): void
   onUnplugged(callback: (kb: JsKeyboard) => void): void
-  onPressed(callback: (kb: JsKeyboard) => void): void
+  onKeyAction(callback: (args: [JsKeyboard, JsKeyEvent]) => void): void
   getKeyboards(): Array<JsKeyboard>
 }
 
@@ -18,6 +18,37 @@ export interface JsKeyboardId {
   vendorId?: string
   productId?: string
   serial?: string
+}
+
+export interface JsKeyEvent {
+  state: JsKeyState
+  key: string
+  code: string
+  location: JsLocation
+  modifiers: JsModifiers
+  repeat: boolean
+  isComposing: boolean
+}
+
+export declare const enum JsKeyState {
+  Down = 'Down',
+  Up = 'Up'
+}
+
+export declare const enum JsLocation {
+  Standard = 'Standard',
+  Left = 'Left',
+  Right = 'Right',
+  Numpad = 'Numpad'
+}
+
+export interface JsModifiers {
+  shift: boolean
+  ctrl: boolean
+  alt: boolean
+  meta: boolean
+  capsLock: boolean
+  numLock: boolean
 }
 
 export interface JsPortId {

@@ -31,7 +31,8 @@ test('newKeyboardSource returns a valid KeyboardManager', (t) => {
   t.is(typeof manager.getKeyboards, 'function')
   t.is(typeof manager.onPlugged, 'function')
   t.is(typeof manager.onUnplugged, 'function')
-  t.is(typeof manager.onPressed, 'function')
+  t.is(typeof manager.onKeyAction, 'function')
+  t.is(typeof manager.close, 'function')
 })
 
 test('getKeyboards returns an array of keyboard objects', (t) => {
@@ -63,7 +64,7 @@ test('event listeners can be registered without throwing errors', (t) => {
   })
 
   t.notThrows(() => {
-    manager.onPressed(() => {})
+    manager.onKeyAction(() => {})
   })
 })
 

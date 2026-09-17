@@ -1,4 +1,6 @@
 #![deny(clippy::all)]
+mod key_mapping;
+use key_mapping::*;
 use keyboard_identifier::{KeyboardManager as InnerManager, keyboard_source::Keyboard};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
@@ -69,7 +71,10 @@ impl KeyboardManager {
       .callee_handled::<false>()
       .build()?;
     self.inner()?.on_plugged(move |kb| {
-      let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
+      let _ = tsfn.call(
+        JsKeyboard::from(kb),
+        ThreadsafeFunctionCallMode::NonBlocking,
+      );
     });
     Ok(())
   }
@@ -84,23 +89,33 @@ impl KeyboardManager {
       .callee_handled::<false>()
       .build()?;
     self.inner()?.on_unplugged(move |kb| {
-      let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
+      let _ = tsfn.call(
+        JsKeyboard::from(kb),
+        ThreadsafeFunctionCallMode::NonBlocking,
+      );
     });
     Ok(())
   }
 
   #[napi]
-  pub fn on_pressed(
+  pub fn on_key_action(
     &self,
-    #[napi(ts_arg_type = "(kb: JsKeyboard) => void")] callback: Function<JsKeyboard, ()>,
+    #[napi(ts_arg_type = "(args: [JsKeyboard, JsKeyEvent]) => void")] callback: Function<
+      (JsKeyboard, JsKeyEvent),
+      (),
+    >,
   ) -> Result<()> {
     let tsfn = callback
       .build_threadsafe_function()
       .callee_handled::<false>()
       .build()?;
-    self.inner()?.on_pressed(move |kb| {
-      let _ = tsfn.call(kb.into(), ThreadsafeFunctionCallMode::NonBlocking);
+
+    self.inner()?.on_key_action(move |kb, event| {
+      let js_kb = JsKeyboard::from(kb);
+      let js_event = JsKeyEvent::from(event);
+      let _ = tsfn.call((js_kb, js_event), ThreadsafeFunctionCallMode::NonBlocking);
     });
+
     Ok(())
   }
 

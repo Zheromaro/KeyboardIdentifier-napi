@@ -1,11 +1,12 @@
 # keyboard-identifier
 
-High-performance Node.js native bindings for the [`keyboard_identifier`](https://crates.io/crates/keyboard_identifier) Rust crate, built with `napi.rs`. Track keyboard device connections and keypress events in real time.
+High-performance Node.js native bindings for the [`keyboard_identifier`](https://crates.io/crates/keyboard_identifier) Rust crate, built with `napi-rs`. Track keyboard device connections and rich key action events in real time.
 
 ## Features
 
-* **Event Listeners:** Monitor hardware plug, unplug, and keypress events.
+* **Event Listeners:** Monitor hardware plug, unplug, and detailed key action events.
 * **Device Identification:** Extract Vendor IDs, Product IDs, Serials, and system port paths.
+* **Rich Key Data:** Access standardized Web Keyboard Event properties (logical key, physical code, modifiers, location, repeat state, and composition status).
 * **Non-Blocking Execution:** Asynchronous event loop integration powered by Rust threads.
 
 ## Installation
@@ -37,9 +38,21 @@ async function main() {
     console.log("Keyboard unplugged:", kb);
   });
 
-  // Listen for keypress events
-  manager.onPressed((kb) => {
-    console.log("Key pressed on device:", kb.keyboardId.name);
+  // Listen for rich key action events
+  // Note: The callback receives a single array argument [kb, event] due to 
+  // N-API threadsafe function limitations. Destructure it accordingly.
+  manager.onKeyAction(([kb, event]) => {
+    const kbName = kb.keyboardId.name || "Unknown Keyboard";
+    console.log(`\nKey Action on [${kbName}]:`);
+    console.dir({
+      state: event.state,           // "Down" or "Up"
+      key: event.key,               // Logical key (e.g., "a", "Enter", "Shift")
+      code: event.code,             // Physical code (e.g., "KeyA", "Enter", "ShiftLeft")
+      location: event.location,     // "Standard", "Left", "Right", or "Numpad"
+      modifiers: event.modifiers,   // { shift, ctrl, alt, meta, capsLock, numLock }
+      repeat: event.repeat,         // true if auto-repeating
+      isComposing: event.isComposing,
+    }, { depth: null });
   });
 }
 
@@ -90,9 +103,37 @@ Initializes the inner event listener and returns an active `KeyboardManager` ins
 | :--- | :--- | :--- |
 | `physicalPath` | `string \| null` | OS-specific physical port string. |
 
+#### `JsPortId`
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `physicalPath` | `string \| null` | OS-specific physical port string. |
+
+#### `JsKeyEvent`
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `state` | `"Down" \| "Up"` | Whether the key is currently pressed down or released. |
+| `key` | `string` | Logical key value representing the meaning of the keypress (e.g., `"a"`, `"Enter"`, `"Shift"`). |
+| `code` | `string` | Physical key position code based on the US layout (e.g., `"KeyA"`, `"Enter"`, `"ShiftLeft"`). |
+| `location` | `"Standard" \| "Left" \| "Right" \| "Numpad"` | Physical location of the key (useful for distinguishing left/right modifiers or numpad keys). |
+| `modifiers` | `JsModifiers` | Object containing the current state of all tracked modifier keys. |
+| `repeat` | `boolean` | `true` if the event is an auto-repeated keypress (holding the key down). |
+| `isComposing` | `boolean` | `true` if the event is part of an IME composition session (should usually be ignored by standard text editors). |
+
+#### `JsModifiers`
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `shift` | `boolean` | `true` if a Shift key is currently held down. |
+| `ctrl` | `boolean` | `true` if a Control key is currently held down. |
+| `alt` | `boolean` | `true` if an Alt key is currently held down. |
+| `meta` | `boolean` | `true` if a Meta/Command/Windows key is currently held down. |
+| `capsLock` | `boolean` | `true` if Caps Lock is currently active/toggled on. |
+| `numLock` | `boolean` | `true` if Num Lock is currently active/toggled on. |
+
 ## Platform Requirements
 
-This package relies on OS-level hardware access APIs provided by the underlying Rust crate. On Linux systems, users may need elevated privileges (or proper `udev` permissions) to capture raw keypresses and device events.
+- Linux: Users will need elevated privileges (sudo) or proper udev rules granting read access to /dev/input/event* devices to capture raw keypresses and device events.
+- Windows: Generally works out of the box, but may require running the terminal as Administrator depending on system security policies.
+- macOS: Requires explicit "Input Monitoring" and/or "Accessibility" permissions in System Settings to capture global keyboard events. 
 
 ## License
 

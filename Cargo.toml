@@ -1,13 +1,13 @@
 [package]
 edition = "2024"
 name = "keyboard_identifier_napi"
-version = "0.1.0"
+version = "1.1.0"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-keyboard_identifier = "0.1.0"
+keyboard_identifier = "0.2.1"
 tokio = { version = "1.53.1", features = ["macros", "rt", "sync", "rt-multi-thread"] }
 napi-derive = "3.0.0"
 

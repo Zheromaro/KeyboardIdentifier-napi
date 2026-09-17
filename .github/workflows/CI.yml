@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'
   pull_request:
 
 env:
@@ -64,6 +66,9 @@ jobs:
           # Windows
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+          # macOS (Apple Silicon)
+          - target: aarch64-apple-darwin
+            os: macos-14
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

@@ -19,9 +19,20 @@ async function main() {
     console.dir(kb, { depth: null });
   });
 
-  manager.onPressed((kb) => {
-    console.log("Keyboard pressed:");
-    console.dir(kb.keyboardId.name, { depth: null });
+  // Updated to use the new onKeyAction API
+  manager.onKeyAction(([kb, event]) => {
+    const kbName = kb.keyboardId.name || "Unknown Keyboard";
+    console.log(`\nKey Action on [${kbName}]:`);
+
+    console.dir({
+      state: event.state,           // "Down" or "Up"
+      key: event.key,               // Logical key (e.g., "a", "Enter", "Shift")
+      code: event.code,             // Physical code (e.g., "KeyA", "Enter", "ShiftLeft")
+      location: event.location,     // "Standard", "Left", "Right", or "Numpad"
+      modifiers: event.modifiers,   // { shift, ctrl, alt, meta, capsLock, numLock }
+      repeat: event.repeat,         // true if auto-repeating
+      isComposing: event.isComposing,
+    }, { depth: null });
   });
 
   // Keep the process alive until Ctrl+C.
