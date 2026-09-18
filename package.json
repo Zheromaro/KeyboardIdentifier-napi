@@ -1,6 +1,6 @@
 {
   "name": "keyboard-identifier",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "a rust keyboard enumeration and hotplug events for Linux and Windows introduced into node.js with napi.rs",
   "main": "index.js",
   "repository": {
